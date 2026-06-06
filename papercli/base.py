@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
+from typing import TypeVar
 
 from papercli.models import Paper
 
@@ -19,7 +20,10 @@ class Crawler(ABC):
         return []
 
 
-def register(cls: type[Crawler]) -> type[Crawler]:
+T = TypeVar("T", bound="Crawler")
+
+
+def register(cls: type[T]) -> type[T]:
     inst = cls()
     for v in inst.venues:
         REGISTRY[v.lower()] = inst

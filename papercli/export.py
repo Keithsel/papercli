@@ -3,6 +3,7 @@ import sqlite3
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+from huggingface_hub import HfApi
 
 from papercli.db import DEFAULT_DB
 
@@ -30,15 +31,24 @@ def export_parquet(out: Path, db_path: Path = DEFAULT_DB) -> int:
     rows = conn.execute(f"SELECT {', '.join(db_cols)} FROM papers").fetchall()
     conn.close()
 
+    api = HfApi()
+    try:
+        remote_files = set(
+            api.list_repo_files("Keithsel/papercli-papers", repo_type="dataset")
+        )
+    except Exception:
+        remote_files = set()
+
     data = {}
     for col in COLUMNS:
         if col == "hf_pdf_path":
-            data[col] = [
-                f"pdfs/{row['source']}/{row['year']}/{row['id']}.pdf"
-                if row["pdf_path"]
-                else None
-                for row in rows
-            ]
+            data[col] = []
+            for row in rows:
+                expected_path = f"pdfs/{row['source']}/{row['year']}/{row['id']}.pdf"
+                if row["pdf_path"] or expected_path in remote_files:
+                    data[col].append(expected_path)
+                else:
+                    data[col].append(None)
         else:
             data[col] = [row[col] for row in rows]
 

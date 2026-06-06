@@ -11,12 +11,21 @@ A command-line tool to crawl, index, download, and search AI conference and jour
 
 ## Setup
 
-Requires Python 3.12+ and [uv](https://github.com/astral-sh/uv).
+Requires Python 3.12+.
 
 1. Clone the repository.
 2. Install dependencies and set up the virtual environment:
+
+   **Using `uv` (Recommended):**
    ```bash
    uv sync
+   ```
+
+   **Using standard Python and `pip`:**
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -e .
    ```
 
 ## Usage
@@ -115,6 +124,39 @@ path = hf_hub_download(
 
 If `hf_pdf_path` is null, the PDF isn't mirrored — use `pdf_url` instead.
 
+### Publishing
+
+Publish the local index and downloaded PDFs to the [`Keithsel/papercli-papers`](https://huggingface.co/datasets/Keithsel/papercli-papers) dataset repository:
+
+1. **Authenticate once** (saves token locally):
+   ```bash
+   # If using uv:
+   uv run huggingface-cli login
+   
+   # If using standard Python:
+   huggingface-cli login
+   ```
+   *Alternatively, set the `HF_TOKEN` environment variable.*
+
+2. **Ensure the desired venue-years are indexed**:
+   ```bash
+   # If using uv/just:
+   just index            # or: just crawl NeurIPS 2025
+   
+   # If using standard Python:
+   papers index
+   ```
+
+3. **Export and Upload**:
+   ```bash
+   # If using uv/just:
+   just publish
+   
+   # If using standard Python:
+   python scripts/publish.py
+   ```
+   This will export the local index to Parquet format, generate per-venue-year browse Parquet files, and upload them alongside any locally downloaded PDFs directly to the Hugging Face dataset repository.
+
 ## Development
 
 - Lint and format code:
@@ -154,11 +196,11 @@ Tracked status of crawler implementations against the [Cannot-Miss-AI-Conference
   - [ ] 2025
   - [ ] 2024
   - [ ] 2023
-- [ ] **IJCAI**
+- [x] **IJCAI**
   - [ ] 2026
-  - [ ] 2025
-  - [ ] 2024
-  - [ ] 2023
+  - [x] 2025
+  - [x] 2024
+  - [x] 2023
 - [x] **CVPR**
   - [x] 2026
   - [x] 2025
@@ -197,11 +239,12 @@ Tracked status of crawler implementations against the [Cannot-Miss-AI-Conference
 
 ### Journals
 
-- [ ] **JMLR**
+- [x] **JMLR**
   - [ ] 2026
-  - [ ] 2025
-  - [ ] 2024
-  - [ ] 2023
+  - [x] 2025
+  - [x] 2024
+  - [x] 2023
+  - [x] 2022
 - [ ] **TPAMI** (not fully open)
 - [ ] **ACM MM**
   - [ ] 2025

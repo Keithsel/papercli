@@ -1,6 +1,13 @@
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 from papercli.crawlers.openreview import _value
 from papercli.crawlers.cvf import CVFCrawler
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _read(name: str) -> str:
+    return (FIXTURES / name).read_text(encoding="utf-8")
 
 
 def test_openreview_value_helper():
@@ -16,29 +23,7 @@ def test_openreview_value_helper():
 
 @patch("requests.get")
 def test_cvf_crawler_sibling_walk(mock_get):
-    mock_html = """
-    <html>
-      <body>
-        <dl>
-          <dt class="ptitle"><a href="/content/CVPR2025/html/Test_Paper_CVPR_2025_paper.html">Dynamic Sibling Walk Paper</a></dt>
-          <dd>
-            <form action="" method="post">
-              <input name="query_author" value="Author A" type="hidden">
-              <input name="query_author" value="Author B" type="hidden">
-            </form>
-            [<a href="/content/CVPR2025/papers/Test_Paper_CVPR_2025_paper.pdf">pdf</a>]
-          </dd>
-          <dt class="ptitle"><a href="/content/CVPR2025/html/Another_Paper_CVPR_2025_paper.html">Next Paper Title</a></dt>
-          <dd>
-            <form action="" method="post">
-              <input name="query_author" value="Author C" type="hidden">
-            </form>
-            [<a href="/content/CVPR2025/papers/Another_Paper_CVPR_2025_paper.pdf">pdf</a>]
-          </dd>
-        </dl>
-      </body>
-    </html>
-    """
+    mock_html = _read("cvf_sibling_walk.html")
     mock_response = MagicMock()
     mock_response.text = mock_html
     mock_response.status_code = 200

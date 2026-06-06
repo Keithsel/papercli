@@ -108,7 +108,17 @@ class Store:
 
     def venue_years(self) -> list[sqlite3.Row]:
         return self.conn.execute(
-            "SELECT venue, year, COUNT(*) as count FROM papers GROUP BY venue, year ORDER BY venue, year"
+            """
+            SELECT
+                venue,
+                year,
+                COUNT(*) as count,
+                SUM(CASE WHEN pdf_path IS NOT NULL AND pdf_path != '' THEN 1 ELSE 0 END) as local_count,
+                SUM(CASE WHEN (pdf_path IS NULL OR pdf_path = '') AND pdf_url IS NOT NULL AND pdf_url != '' THEN 1 ELSE 0 END) as to_download_count
+            FROM papers
+            GROUP BY venue, year
+            ORDER BY venue, year
+            """
         ).fetchall()
 
     def mark_complete(self, venue: str, year: int) -> None:

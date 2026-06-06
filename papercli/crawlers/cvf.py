@@ -38,7 +38,10 @@ class CVFCrawler(Crawler):
 
         resp = requests.get(url, timeout=120)
         resp.raise_for_status()
-        tree = HTMLParser(resp.text)
+        yield from self._parse(resp.text, venue, year)
+
+    def _parse(self, html: str, venue: str, year: int) -> Iterator[Paper]:
+        tree = HTMLParser(html)
 
         for dt in tree.css("dt.ptitle"):
             title_a = dt.css_first("a")

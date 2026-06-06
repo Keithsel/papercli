@@ -90,27 +90,82 @@ def venues():
 
 @app.command(name="venue-years")
 def venue_years():
-    supported = all_supported_venue_years()
-    table_supported = Table(title="Supported Venue-Years")
-    table_supported.add_column("Venue", style="cyan")
-    table_supported.add_column("Year", style="magenta")
-    for venue, year in supported:
-        table_supported.add_row(venue, str(year))
-
-    console.print(table_supported)
-    console.print()
-
-    table_indexed = Table(title="Indexed Venue-Years in Database")
-    table_indexed.add_column("Venue", style="cyan")
-    table_indexed.add_column("Year", style="magenta")
-    table_indexed.add_column("Count", style="green", justify="right")
-
+    supported = set(all_supported_venue_years())
     store = Store()
-    rows = store.venue_years()
-    for row in rows:
-        table_indexed.add_row(row["venue"], str(row["year"]), f"{row['count']:,}")
+    db_rows = store.venue_years()
 
-    console.print(table_indexed)
+    db_stats = {
+        (row["venue"], row["year"]): {
+            "count": row["count"],
+            "local_count": row["local_count"],
+            "to_download_count": row["to_download_count"],
+        }
+        for row in db_rows
+    }
+
+    all_keys = sorted(supported.union(db_stats.keys()))
+
+    table = Table(title="Venue-Years Status")
+    table.add_column("Venue", style="cyan")
+    table.add_column("Year", style="magenta")
+    table.add_column("Count", style="green", justify="right")
+    table.add_column("Local PDFs", style="blue", justify="right")
+    table.add_column("To Download", style="yellow", justify="right")
+    table.add_column("Progress", style="cyan", justify="right")
+
+    total_papers = 0
+    total_local = 0
+    total_to_dl = 0
+
+    for venue, year in all_keys:
+        stats = db_stats.get((venue, year))
+        if stats:
+            count = stats["count"]
+            local = stats["local_count"]
+            to_dl = stats["to_download_count"]
+            total_dl = local + to_dl
+            if total_dl > 0:
+                pct = (local / total_dl) * 100
+                progress = f"{pct:.1f}% ({local:,}/{total_dl:,})"
+            else:
+                progress = "-"
+        else:
+            count = 0
+            local = 0
+            to_dl = 0
+            progress = "-"
+
+        total_papers += count
+        total_local += local
+        total_to_dl += to_dl
+
+        table.add_row(
+            venue,
+            str(year),
+            f"{count:,}" if count > 0 else "0",
+            f"{local:,}" if local > 0 else "0",
+            f"{to_dl:,}" if to_dl > 0 else "0",
+            progress,
+        )
+
+    table.add_section()
+    overall_dl = total_local + total_to_dl
+    if overall_dl > 0:
+        pct = (total_local / overall_dl) * 100
+        overall_progress = f"{pct:.1f}% ({total_local:,}/{overall_dl:,})"
+    else:
+        overall_progress = "-"
+
+    table.add_row(
+        "Total",
+        "",
+        f"{total_papers:,}",
+        f"{total_local:,}",
+        f"{total_to_dl:,}",
+        overall_progress,
+    )
+
+    console.print(table)
 
 
 @app.command()
