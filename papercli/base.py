@@ -31,3 +31,13 @@ def get_crawler(venue: str) -> Crawler:
     if crawler is None:
         raise KeyError(f"No crawler for venue {venue!r}. Known: {sorted(REGISTRY)}")
     return crawler
+
+
+def all_supported_venue_years() -> list[tuple[str, int]]:
+    out: list[tuple[str, int]] = []
+    seen: set[int] = set()
+    for crawler in REGISTRY.values():
+        if id(crawler) not in seen:
+            seen.add(id(crawler))
+            out.extend(crawler.supported_venue_years)
+    return sorted(out, key=lambda vy: (vy[0].lower(), vy[1]))

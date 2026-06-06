@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.table import Table
 
 import papercli.crawlers  # noqa: F401
-from papercli.base import REGISTRY, get_crawler
+from papercli.base import REGISTRY, get_crawler, all_supported_venue_years
 from papercli.db import Store, DEFAULT_DB
 from papercli.export import export_parquet
 
@@ -17,20 +17,25 @@ PDF_DIR = DEFAULT_DB.parent / "pdfs"
 DEFAULT_PARQUET = DEFAULT_DB.parent / "papers.parquet"
 
 
-@app.command()
-def crawl(venue: str, year: int):
+def _crawl_one(venue: str, year: int) -> int:
     store = Store()
     crawler = get_crawler(venue)
     batch: list = []
     total = 0
-    with console.status(f"Crawling {venue} {year}..."):
-        for paper in crawler.fetch(venue, year):
-            batch.append(paper)
-            if len(batch) >= 500:
-                total += store.upsert(batch)
-                batch = []
-        total += store.upsert(batch)
+    for paper in crawler.fetch(venue, year):
+        batch.append(paper)
+        if len(batch) >= 500:
+            total += store.upsert(batch)
+            batch = []
+    total += store.upsert(batch)
     store.mark_complete(venue, year)
+    return total
+
+
+@app.command()
+def crawl(venue: str, year: int):
+    with console.status(f"Crawling {venue} {year}..."):
+        total = _crawl_one(venue, year)
     console.print(f"[green]Indexed {total} papers from {venue} {year}.[/]")
 
 
@@ -85,17 +90,11 @@ def venues():
 
 @app.command(name="venue-years")
 def venue_years():
-    supported = []
-    seen = set()
-    for crawler in REGISTRY.values():
-        if crawler not in seen:
-            seen.add(crawler)
-            supported.extend(crawler.supported_venue_years)
-
+    supported = all_supported_venue_years()
     table_supported = Table(title="Supported Venue-Years")
     table_supported.add_column("Venue", style="cyan")
     table_supported.add_column("Year", style="magenta")
-    for venue, year in sorted(supported, key=lambda x: (x[0].lower(), x[1])):
+    for venue, year in supported:
         table_supported.add_row(venue, str(year))
 
     console.print(table_supported)
@@ -118,20 +117,14 @@ def venue_years():
 def index():
     store = Store()
     completed = store.get_completed_crawls()
-
-    supported = []
-    seen = set()
-    for crawler in REGISTRY.values():
-        if crawler not in seen:
-            seen.add(crawler)
-            supported.extend(crawler.supported_venue_years)
-
-    for venue, year in sorted(supported, key=lambda x: (x[0].lower(), x[1])):
+    for venue, year in all_supported_venue_years():
         if (venue, year) in completed:
             console.print(f"[yellow]Skipping already indexed {venue} {year}[/]")
             continue
         try:
-            crawl(venue, year)
+            with console.status(f"Crawling {venue} {year}..."):
+                total = _crawl_one(venue, year)
+            console.print(f"[green]Indexed {total} papers from {venue} {year}.[/]")
         except Exception as e:
             console.print(f"[red]Error crawling {venue} {year}: {e}[/]")
 
