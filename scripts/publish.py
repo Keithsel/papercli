@@ -1,3 +1,4 @@
+import os
 from collections import defaultdict
 
 from huggingface_hub import HfApi, create_repo
@@ -7,7 +8,7 @@ from papercli.base import all_supported_venue_years
 from papercli.db import DEFAULT_DB
 from papercli.export import export_parquet, export_browse_by_venue_year
 
-REPO_ID = "Keithsel/papercli-papers"
+REPO_ID = os.environ.get("HF_DATASET_SLUG", "ClosedUni/papercli-papers")
 PDF_DIR = DEFAULT_DB.parent / "pdfs"
 PARQUET = DEFAULT_DB.parent / "papers.parquet"
 BROWSE_DIR = DEFAULT_DB.parent / "browse"

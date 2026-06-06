@@ -1,5 +1,6 @@
-from pathlib import Path
+import os
 import sqlite3
+from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -32,10 +33,9 @@ def export_parquet(out: Path, db_path: Path = DEFAULT_DB) -> int:
     conn.close()
 
     api = HfApi()
+    repo_id = os.environ.get("HF_DATASET_SLUG", "ClosedUni/papercli-papers")
     try:
-        remote_files = set(
-            api.list_repo_files("Keithsel/papercli-papers", repo_type="dataset")
-        )
+        remote_files = set(api.list_repo_files(repo_id, repo_type="dataset"))
     except Exception:
         remote_files = set()
 

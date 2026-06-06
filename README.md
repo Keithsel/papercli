@@ -116,7 +116,7 @@ To fetch a mirrored PDF:
 from huggingface_hub import hf_hub_download
 
 path = hf_hub_download(
-    repo_id="Keithsel/papercli-papers",
+    repo_id="ClosedUni/papercli-papers",
     filename=row["hf_pdf_path"],   # e.g. "pdfs/acl/2025/42cbbfdf08e170c9.pdf"
     repo_type="dataset",
 )
@@ -126,7 +126,7 @@ If `hf_pdf_path` is null, the PDF isn't mirrored — use `pdf_url` instead.
 
 ### Publishing
 
-Publish the local index and downloaded PDFs to the [`Keithsel/papercli-papers`](https://huggingface.co/datasets/Keithsel/papercli-papers) dataset repository:
+Publish the local index and downloaded PDFs to the [`ClosedUni/papercli-papers`](https://huggingface.co/datasets/ClosedUni/papercli-papers) dataset repository (configurable via the `HF_DATASET_SLUG` environment variable):
 
 1. **Authenticate once** (saves token locally):
    ```bash
