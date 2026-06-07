@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS completed_crawls (
 class Store:
     def __init__(self, path: Path = DEFAULT_DB):
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(path)
+        self.conn = sqlite3.connect(path, timeout=60.0)
+        self.conn.execute("PRAGMA journal_mode=WAL;")
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
         with self.conn:
