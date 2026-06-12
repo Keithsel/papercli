@@ -87,3 +87,57 @@ def test_upsert_does_not_overwrite_pdf_path():
             "SELECT pdf_path FROM papers WHERE id=?", (paper1.id,)
         ).fetchone()
         assert row["pdf_path"] == "/path/to/local.pdf"
+
+
+def test_venue_years_filtering():
+    from typer.testing import CliRunner
+    from papercli.cli import app, console
+
+    console.width = 150
+
+    runner = CliRunner()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "papers.db"
+        store = Store(db_path)
+
+        with (
+            patch("papercli.cli.Store", return_value=store),
+            patch("papercli.cli.DEFAULT_DB", db_path),
+            patch(
+                "papercli.cli.all_supported_venue_years",
+                return_value=[("CVPR", 2024), ("ICLR", 2025), ("NeurIPS", 2025)],
+            ),
+        ):
+            result = runner.invoke(app, ["venue-years"])
+            assert result.exit_code == 0
+            assert "CVPR" in result.stdout
+            assert "ICLR" in result.stdout
+            assert "NeurIPS" in result.stdout
+
+            result_inc = runner.invoke(app, ["venue-years", "--include", "CVPR,2025"])
+            assert result_inc.exit_code == 0
+            assert "CVPR" in result_inc.stdout
+            assert "ICLR" in result_inc.stdout
+            assert "NeurIPS" in result_inc.stdout
+
+            result_inc_cvpr = runner.invoke(app, ["venue-years", "--include", "CVPR"])
+            assert result_inc_cvpr.exit_code == 0
+            assert "CVPR" in result_inc_cvpr.stdout
+            assert "ICLR" not in result_inc_cvpr.stdout
+            assert "NeurIPS" not in result_inc_cvpr.stdout
+
+            result_exc = runner.invoke(app, ["venue-years", "--exclude", "NeurIPS"])
+            assert result_exc.exit_code == 0
+            assert "CVPR" in result_exc.stdout
+            assert "ICLR" in result_exc.stdout
+            assert "NeurIPS" not in result_exc.stdout
+
+            result_both = runner.invoke(
+                app,
+                ["venue-years", "--include", "2025", "--exclude", "NeurIPS"],
+            )
+            assert result_both.exit_code == 0
+            assert "CVPR" not in result_both.stdout
+            assert "ICLR" in result_both.stdout
+            assert "NeurIPS" not in result_both.stdout

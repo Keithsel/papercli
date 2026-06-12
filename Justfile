@@ -20,8 +20,8 @@ search query:
 export-parquet:
     uv run papers export
 
-venue-years:
-    uv run papers venue-years
+venue-years *args="":
+    uv run papers venue-years {{ args }}
 
 index:
     uv run papers index

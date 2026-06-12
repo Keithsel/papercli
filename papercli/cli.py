@@ -97,7 +97,14 @@ def venues():
 
 
 @app.command(name="venue-years")
-def venue_years():
+def venue_years(
+    include: str | None = typer.Option(
+        None, "--include", "-i", help="Comma-separated list of venues/years to include"
+    ),
+    exclude: str | None = typer.Option(
+        None, "--exclude", "-e", help="Comma-separated list of venues/years to exclude"
+    ),
+):
     import json
     from collections import defaultdict
 
@@ -146,6 +153,26 @@ def venue_years():
             stats["to_dl"] += 1
 
     all_keys = sorted(supported.union(db_stats.keys()), key=_venue_year_key)
+
+    def matches_any(venue: str, year: int, terms: list[str]) -> bool:
+        target = f"{venue} {year}".lower().replace("-", " ").replace("_", " ")
+        for term in terms:
+            normalized_term = term.lower().replace("-", " ").replace("_", " ")
+            if normalized_term in target:
+                return True
+        return False
+
+    if include:
+        include_terms = [t.strip() for t in include.split(",") if t.strip()]
+        if include_terms:
+            all_keys = [(v, y) for v, y in all_keys if matches_any(v, y, include_terms)]
+
+    if exclude:
+        exclude_terms = [t.strip() for t in exclude.split(",") if t.strip()]
+        if exclude_terms:
+            all_keys = [
+                (v, y) for v, y in all_keys if not matches_any(v, y, exclude_terms)
+            ]
 
     table = Table(title="Venue-Years Status")
     table.add_column("Crawler / Base", style="green")
