@@ -1,3 +1,4 @@
+import argparse
 import os
 from collections import defaultdict
 
@@ -7,6 +8,7 @@ import papercli.crawlers  # noqa: F401
 from papercli.base import all_supported_venue_years
 from papercli.db import DEFAULT_DB
 from papercli.export import export_parquet, export_browse_by_venue_year
+from papercli.cli import reorganize_pdfs, get_repo_id
 
 REPO_ID = os.environ.get("HF_DATASET_SLUG", "ClosedUni/papercli-papers")
 PDF_DIR = DEFAULT_DB.parent / "pdfs"
@@ -43,22 +45,83 @@ def build_readme() -> str:
         "- `papers.parquet`: the full dataset (all fields, all venues).",
         "- Per-venue browse views: pick a venue in **Subset**, a year in **Split**.",
         "",
+        "### Dataset Structure",
+        "",
+        "- `ClosedUni/papercli-papers` (main entrypoint): Contains the full index metadata parquet (`papers.parquet`) and the per-venue browse parquet views (`browse/`).",
+        "- `ClosedUni/papercli-papers-[venue]`: Contains the sharded PDF files of that specific venue (no metadata parquet).",
+        "",
+        "### PDF Storage",
+        "",
+        "PDF files are sharded across separate datasets by venue to keep repository sizes optimal:",
+        "- `ClosedUni/papercli-papers-[venue]` (e.g. `ClosedUni/papercli-papers-cvpr` for CVPR PDFs)",
+        "",
+        "To download a mirrored PDF:",
+        "```python",
+        "from huggingface_hub import hf_hub_download",
+        "",
+        "repo_id = f\"ClosedUni/papercli-papers-{row['venue'].lower()}\"",
+        "path = hf_hub_download(",
+        "    repo_id=repo_id,",
+        '    filename=row["hf_pdf_path"],',
+        '    repo_type="dataset",',
+        ")",
+        "```",
+        "",
         "Built with [papercli](https://github.com/Keithsel/papercli).",
     ]
     return "\n".join(lines)
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Publish papers and PDFs to Hugging Face."
+    )
+    parser.add_argument(
+        "--venue", default=None, help="Specific venue to upload PDFs for"
+    )
+    parser.add_argument(
+        "--year", default=None, type=int, help="Specific year to upload PDFs for"
+    )
+    args = parser.parse_args()
+
+    venue_filter = args.venue.lower() if args.venue else None
+    year_filter = args.year if args.year else None
+
+    reorganize_pdfs(PDF_DIR, DEFAULT_DB)
     api = HfApi()
     create_repo(REPO_ID, repo_type="dataset", exist_ok=True)
 
     if PDF_DIR.exists() and any(PDF_DIR.rglob("*.pdf")):
-        api.upload_large_folder(
-            repo_id=REPO_ID,
-            repo_type="dataset",
-            folder_path=str(DEFAULT_DB.parent),
-            allow_patterns="pdfs/**/*",
-        )
+        for venue_dir in PDF_DIR.iterdir():
+            if venue_dir.is_dir():
+                venue_lower = venue_dir.name
+                if venue_filter and venue_lower != venue_filter:
+                    continue
+
+                repo_id = get_repo_id(venue_lower)
+
+                if year_filter:
+                    year_dir = venue_dir / str(year_filter)
+                    if year_dir.exists():
+                        print(
+                            f"Uploading PDFs for venue: {venue_lower} ({year_filter}) -> {repo_id}..."
+                        )
+                        create_repo(repo_id, repo_type="dataset", exist_ok=True)
+                        api.upload_large_folder(
+                            repo_id=repo_id,
+                            repo_type="dataset",
+                            folder_path=str(PDF_DIR.parent),
+                            allow_patterns=f"pdfs/{venue_lower}/{year_filter}/**/*",
+                        )
+                else:
+                    print(f"Uploading PDFs for venue: {venue_lower} -> {repo_id}...")
+                    create_repo(repo_id, repo_type="dataset", exist_ok=True)
+                    api.upload_large_folder(
+                        repo_id=repo_id,
+                        repo_type="dataset",
+                        folder_path=str(PDF_DIR.parent),
+                        allow_patterns=f"pdfs/{venue_lower}/**/*",
+                    )
         print(f"Uploaded PDFs from {PDF_DIR}")
     else:
         print("No local PDFs to upload; skipping.")

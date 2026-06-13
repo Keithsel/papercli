@@ -40,7 +40,7 @@ def test_sync_hf_logic(mock_hf_api_class):
         )
         store.upsert([paper1])
 
-        expected_pdf_path = f"pdfs/acl/2023/{paper1.id}.pdf"
+        expected_pdf_path = f"pdfs/acl/2023/{paper1.id[:2]}/{paper1.id}.pdf"
         mock_api.list_repo_files.return_value = [expected_pdf_path]
 
         with (
@@ -61,6 +61,54 @@ def test_sync_hf_logic(mock_hf_api_class):
                 "SELECT pdf_path FROM papers WHERE id=?", (paper1.id,)
             ).fetchone()
             assert row["pdf_path"] == f"hf://{expected_pdf_path}"
+
+
+@patch("huggingface_hub.HfApi")
+@patch("huggingface_hub.create_repo")
+def test_sync_hf_logic_creates_missing_repo(mock_create_repo, mock_hf_api_class):
+    from huggingface_hub.errors import RepositoryNotFoundError
+    import httpx
+
+    mock_api = MagicMock()
+    mock_hf_api_class.return_value = mock_api
+
+    mock_info = MagicMock()
+    mock_info.sha = "dummy-sha-456"
+    mock_response = httpx.Response(
+        404, request=httpx.Request("GET", "https://huggingface.co")
+    )
+    mock_api.repo_info.side_effect = [
+        RepositoryNotFoundError("Repo not found", response=mock_response),
+        mock_info,
+    ]
+    mock_api.list_repo_files.return_value = []
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "papers.db"
+        store = Store(db_path)
+
+        paper1 = Paper(
+            title="A dummy paper",
+            authors=["Alice"],
+            venue="ACL",
+            year=2023,
+            source="acl",
+            pdf_url="http://example.com/paper.pdf",
+        )
+        store.upsert([paper1])
+
+        with (
+            patch("papercli.cli.Store", return_value=store),
+            patch("papercli.cli.DEFAULT_DB", db_path),
+        ):
+            from papercli.cli import _sync_hf_logic
+
+            _sync_hf_logic()
+
+    mock_create_repo.assert_called_once()
+    args, kwargs = mock_create_repo.call_args
+    repo_id_arg = kwargs.get("repo_id") if "repo_id" in kwargs else args[0]
+    assert repo_id_arg == "ClosedUni/papercli-papers-acl"
 
 
 def test_upsert_does_not_overwrite_pdf_path():

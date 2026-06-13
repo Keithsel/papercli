@@ -135,6 +135,11 @@ uv run papers export
 just export-parquet
 ```
 
+### Dataset Structure
+
+- `ClosedUni/papercli-papers` (main entrypoint): Contains the full index metadata parquet (`papers.parquet`) and the per-venue browse parquet views (`browse/`).
+- `ClosedUni/papercli-papers-[venue]`: Contains the sharded PDF files of that specific venue (no metadata parquet).
+
 ### Resolving PDFs
 
 Each row has `pdf_url` (the original source link, always present) and `hf_pdf_path` (a path within this dataset, present only for mirrored papers).
@@ -144,9 +149,10 @@ To fetch a mirrored PDF:
 ```python
 from huggingface_hub import hf_hub_download
 
+repo_id = f"ClosedUni/papercli-papers-{row['venue'].lower()}"
 path = hf_hub_download(
-    repo_id="ClosedUni/papercli-papers",
-    filename=row["hf_pdf_path"],   # e.g. "pdfs/acl/2025/42cbbfdf08e170c9.pdf"
+    repo_id=repo_id,
+    filename=row["hf_pdf_path"],   # e.g. "pdfs/acl/2025/12/12d4c706b05abfff.pdf"
     repo_type="dataset",
 )
 ```

@@ -1,4 +1,3 @@
-import os
 import sqlite3
 from pathlib import Path
 
@@ -24,6 +23,8 @@ COLUMNS = [
 
 
 def export_parquet(out: Path, db_path: Path = DEFAULT_DB) -> int:
+    from papercli.cli import get_repo_id
+
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     db_cols = [c for c in COLUMNS if c != "hf_pdf_path"]
@@ -33,19 +34,32 @@ def export_parquet(out: Path, db_path: Path = DEFAULT_DB) -> int:
     conn.close()
 
     api = HfApi()
-    repo_id = os.environ.get("HF_DATASET_SLUG", "ClosedUni/papercli-papers")
-    try:
-        remote_files = set(api.list_repo_files(repo_id, repo_type="dataset"))
-    except Exception:
-        remote_files = set()
+    repo_remote_files = {}
+    active_venues = {row["venue"].lower() for row in rows}
+    for venue_lower in active_venues:
+        r_id = get_repo_id(venue_lower)
+        try:
+            repo_remote_files[r_id] = set(
+                api.list_repo_files(r_id, repo_type="dataset")
+            )
+        except Exception:
+            repo_remote_files[r_id] = set()
 
     data = {}
     for col in COLUMNS:
         if col == "hf_pdf_path":
             data[col] = []
             for row in rows:
-                expected_path = f"pdfs/{row['source']}/{row['year']}/{row['id']}.pdf"
-                if row["pdf_path"] or expected_path in remote_files:
+                pid = row["id"]
+                venue_lower = row["venue"].lower()
+                r_id = get_repo_id(venue_lower)
+                expected_path = f"pdfs/{venue_lower}/{row['year']}/{pid[:2]}/{pid}.pdf"
+                if row["pdf_path"]:
+                    if row["pdf_path"].startswith("hf://"):
+                        data[col].append(row["pdf_path"][5:])
+                    else:
+                        data[col].append(expected_path)
+                elif expected_path in repo_remote_files[r_id]:
                     data[col].append(expected_path)
                 else:
                     data[col].append(None)

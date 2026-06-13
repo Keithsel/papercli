@@ -44,15 +44,89 @@ def crawl(venue: str, year: int):
     console.print(f"[green]Indexed {total} papers from {venue} {year}.[/]")
 
 
+def get_repo_id(venue_lower: str) -> str:
+    import os
+
+    env_key = f"HF_DATASET_SLUG_{venue_lower.upper().replace('-', '_')}"
+    if env_key in os.environ:
+        return os.environ[env_key]
+    base_slug = os.environ.get("HF_DATASET_SLUG", "ClosedUni/papercli-papers")
+    return f"{base_slug}-{venue_lower}"
+
+
+def reorganize_pdfs(pdf_dir: Path, db_path: Path = DEFAULT_DB) -> None:
+    if not pdf_dir.exists():
+        return
+
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    count = 0
+    for file_path in list(pdf_dir.rglob("*.pdf")):
+        pid = file_path.stem
+        cursor.execute("SELECT venue, year FROM papers WHERE id=?", (pid,))
+        row = cursor.fetchone()
+        if row:
+            venue_lower = row["venue"].lower()
+            year = row["year"]
+            expected_dir = pdf_dir / venue_lower / str(year) / pid[:2]
+            expected_path = expected_dir / f"{pid}.pdf"
+            if file_path != expected_path:
+                expected_dir.mkdir(parents=True, exist_ok=True)
+                file_path.rename(expected_path)
+                count += 1
+
+    for d in sorted(pdf_dir.glob("**"), reverse=True):
+        if d.is_dir() and d != pdf_dir:
+            try:
+                d.rmdir()
+            except OSError:
+                pass
+
+    if count > 0:
+        console.print(f"Reorganized {count} local PDFs into venue-based structure.")
+
+    rows = cursor.execute(
+        "SELECT id, venue, year, pdf_path FROM papers WHERE pdf_path IS NOT NULL"
+    ).fetchall()
+    updates = []
+    for row in rows:
+        pid = row["id"]
+        venue_lower = row["venue"].lower()
+        year = row["year"]
+        old_path = row["pdf_path"]
+
+        if old_path.startswith("hf://"):
+            new_path = f"hf://pdfs/{venue_lower}/{year}/{pid[:2]}/{pid}.pdf"
+        else:
+            new_path = str(pdf_dir / venue_lower / str(year) / pid[:2] / f"{pid}.pdf")
+
+        if old_path != new_path:
+            updates.append((new_path, pid))
+
+    if updates:
+        with conn:
+            conn.executemany("UPDATE papers SET pdf_path=? WHERE id=?", updates)
+        console.print(f"Migrated {len(updates)} PDF paths in the database.")
+
+    conn.close()
+
+
 @app.command()
 def download(venue: str | None = None, year: int | None = None, delay: float = 0.5):
+    reorganize_pdfs(PDF_DIR)
     store = Store()
     rows = store.pending_pdfs(venue, year)
     console.print(f"{len(rows)} PDFs to fetch.")
     for row in rows:
-        dest = PDF_DIR / row["source"] / str(row["year"])
+        pid = row["id"]
+        venue_lower = row["venue"].lower()
+        dest = PDF_DIR / venue_lower / str(row["year"]) / pid[:2]
         dest.mkdir(parents=True, exist_ok=True)
-        path = dest / f"{row['id']}.pdf"
+        path = dest / f"{pid}.pdf"
         try:
             resp = requests.get(row["pdf_url"], timeout=60)
             resp.raise_for_status()
@@ -108,17 +182,16 @@ def venue_years(
     import json
     from collections import defaultdict
 
-    cache_file = DEFAULT_DB.parent / "hf_cache.json"
     hf_ids = set()
-    if cache_file.exists():
+    for cache_file in DEFAULT_DB.parent.glob("hf_cache_*.json"):
         try:
             with open(cache_file, "r") as f:
                 cached_data = json.load(f)
-            hf_ids = {
-                f.split("/")[-1][:-4]
-                for f in cached_data.get("files", [])
-                if f.startswith("pdfs/") and f.endswith(".pdf")
-            }
+            for file_path in cached_data.get("files", []):
+                if file_path.startswith("pdfs/") and file_path.endswith(".pdf"):
+                    parts = file_path.split("/")
+                    if parts:
+                        hf_ids.add(parts[-1][:-4])
         except Exception:
             pass
 
@@ -283,68 +356,102 @@ def venue_years(
 
 def _sync_hf_logic():
     import json
-    from huggingface_hub import HfApi
-    import os
+    from huggingface_hub import HfApi, create_repo
+    from huggingface_hub.errors import RepositoryNotFoundError
 
-    repo_id = os.environ.get("HF_DATASET_SLUG", "ClosedUni/papercli-papers")
+    reorganize_pdfs(PDF_DIR)
 
-    cache_file = DEFAULT_DB.parent / "hf_cache.json"
-    sha = None
-    remote_files = []
-
-    api = HfApi()
-    try:
-        repo_info = api.repo_info(repo_id, repo_type="dataset")
-        sha = repo_info.sha
-    except Exception as e:
-        console.print(
-            f"[yellow]Could not fetch HF repo info: {e}. Falling back to listing directly.[/]"
-        )
-
-    if sha and cache_file.exists():
+    legacy_cache = DEFAULT_DB.parent / "hf_cache.json"
+    if legacy_cache.exists():
         try:
-            with open(cache_file, "r") as f:
-                cached_data = json.load(f)
-            if cached_data.get("repo_id") == repo_id and cached_data.get("sha") == sha:
-                remote_files = cached_data.get("files", [])
-                console.print("Using cached Hugging Face file list.")
+            legacy_cache.unlink()
         except Exception:
             pass
-
-    if not remote_files:
-        console.print(f"Fetching remote file list from HF repository: {repo_id}...")
-        try:
-            remote_files = api.list_repo_files(repo_id, repo_type="dataset")
-            if sha:
-                with open(cache_file, "w") as f:
-                    json.dump(
-                        {"repo_id": repo_id, "sha": sha, "files": remote_files}, f
-                    )
-        except Exception as e:
-            console.print(f"[red]Error fetching from HF: {e}[/]")
-            raise typer.Exit(code=1)
-
-    hf_pdfs = {}
-    for f in remote_files:
-        if f.startswith("pdfs/") and f.endswith(".pdf"):
-            parts = f.split("/")
-            if len(parts) == 4:
-                paper_id = parts[3][:-4]
-                hf_pdfs[paper_id] = f
 
     store = Store()
     conn = store.conn
     cursor = conn.cursor()
-    rows = cursor.execute("SELECT id, pdf_path, source, year FROM papers").fetchall()
+    rows = cursor.execute("SELECT id, pdf_path, venue, year FROM papers").fetchall()
+
+    venues = sorted(list({row["venue"] for row in rows}))
+
+    api = HfApi()
+    hf_pdfs = {}
+
+    for venue in venues:
+        venue_lower = venue.lower()
+        repo_id = get_repo_id(venue_lower)
+
+        cache_file = DEFAULT_DB.parent / f"hf_cache_{venue_lower}.json"
+        sha = None
+        remote_files = []
+
+        try:
+            repo_info = api.repo_info(repo_id, repo_type="dataset")
+            sha = repo_info.sha
+        except RepositoryNotFoundError:
+            console.print(f"[yellow]Repository {repo_id} not found. Creating it...[/]")
+            try:
+                create_repo(repo_id, repo_type="dataset", exist_ok=True)
+                repo_info = api.repo_info(repo_id, repo_type="dataset")
+                sha = repo_info.sha
+            except Exception as create_err:
+                console.print(
+                    f"[red]Could not create HF repository {repo_id}: {create_err}. Skipping sync for this venue.[/]"
+                )
+                continue
+        except Exception as e:
+            console.print(
+                f"[yellow]Could not fetch HF repo info for {repo_id}: {e}. Falling back to listing directly.[/]"
+            )
+
+        if sha and cache_file.exists():
+            try:
+                with open(cache_file, "r") as f:
+                    cached_data = json.load(f)
+                if (
+                    cached_data.get("repo_id") == repo_id
+                    and cached_data.get("sha") == sha
+                ):
+                    remote_files = cached_data.get("files", [])
+            except Exception:
+                pass
+
+        if not remote_files:
+            console.print(f"Fetching remote file list from HF repository: {repo_id}...")
+            try:
+                remote_files = api.list_repo_files(repo_id, repo_type="dataset")
+                if sha:
+                    with open(cache_file, "w") as f:
+                        json.dump(
+                            {"repo_id": repo_id, "sha": sha, "files": remote_files}, f
+                        )
+            except Exception as e:
+                console.print(f"[red]Error fetching from HF for {repo_id}: {e}[/]")
+                continue
+
+        for f in remote_files:
+            if f.startswith("pdfs/") and f.endswith(".pdf"):
+                parts = f.split("/")
+                if len(parts) == 5:
+                    paper_id = parts[4][:-4]
+                    hf_pdfs[paper_id] = f
 
     updates = []
     for row in rows:
         pid = row["id"]
         path = row["pdf_path"]
-        source = row["source"]
+        venue_lower = row["venue"].lower()
         year = row["year"]
 
-        expected_local = DEFAULT_DB.parent / "pdfs" / source / str(year) / f"{pid}.pdf"
+        expected_local = (
+            DEFAULT_DB.parent
+            / "pdfs"
+            / venue_lower
+            / str(year)
+            / pid[:2]
+            / f"{pid}.pdf"
+        )
         if expected_local.exists():
             local_path_str = str(expected_local)
             if path != local_path_str:

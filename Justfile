@@ -35,8 +35,11 @@ sync-hf:
 download venue="" year="":
     uv run python scripts/download.py --venue "{{ venue }}" --year "{{ year }}"
 
-publish:
-    uv run python scripts/publish.py
+download-mul venue="" year="":
+    uv run python scripts/download.py --parallel --venue "{{ venue }}" --year "{{ year }}"
+
+publish *args="":
+    uv run python scripts/publish.py {{ args }}
 
 clean:
     rm -rf .ruff_cache/ .pytest_cache/ .mypy_cache/ build/ dist/ *.egg-info/ .coverage htmlcov/
