@@ -78,7 +78,7 @@ def get_repo_id(venue_lower: str) -> str:
     env_key = f"HF_DATASET_SLUG_{venue_lower.upper().replace('-', '_')}"
     if env_key in os.environ:
         return os.environ[env_key]
-    base_slug = os.environ.get("HF_DATASET_SLUG", "ClosedUni/papercli-papers")
+    base_slug = os.environ.get("HF_DATASET_SLUG", "GenAI4ELab/papercli-papers")
     return f"{base_slug}-{venue_lower}"
 
 

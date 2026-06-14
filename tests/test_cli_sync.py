@@ -108,7 +108,7 @@ def test_sync_hf_logic_creates_missing_repo(mock_create_repo, mock_hf_api_class)
     mock_create_repo.assert_called_once()
     args, kwargs = mock_create_repo.call_args
     repo_id_arg = kwargs.get("repo_id") if "repo_id" in kwargs else args[0]
-    assert repo_id_arg == "ClosedUni/papercli-papers-acl"
+    assert repo_id_arg == "GenAI4ELab/papercli-papers-acl"
 
 
 def test_upsert_does_not_overwrite_pdf_path():

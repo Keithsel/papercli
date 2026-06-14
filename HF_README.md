@@ -131,19 +131,21 @@ Searchable metadata for papers from top AI venues (NeurIPS, ICML, ICLR, CVPR, IC
 
 ### Dataset Structure
 
-- `ClosedUni/papercli-papers` (main entrypoint): Contains the full index metadata parquet (`papers.parquet`) and the per-venue browse parquet views (`browse/`).
-- `ClosedUni/papercli-papers-[venue]`: Contains the sharded PDF files of that specific venue (no metadata parquet).
+- `GenAI4ELab/papercli-papers` (main entrypoint): Contains the full index metadata parquet (`papers.parquet`) and the per-venue browse parquet views (`browse/`).
+- `GenAI4ELab/papercli-papers-[venue]`: Contains the sharded PDF files of that specific venue (no metadata parquet).
 
 ### PDF Storage
 
 PDF files are sharded across separate datasets by venue to keep repository sizes optimal:
-- `ClosedUni/papercli-papers-[venue]` (e.g. `ClosedUni/papercli-papers-cvpr` for CVPR PDFs)
+
+- `GenAI4ELab/papercli-papers-[venue]` (e.g. `GenAI4ELab/papercli-papers-cvpr` for CVPR PDFs)
 
 To download a mirrored PDF:
+
 ```python
 from huggingface_hub import hf_hub_download
 
-repo_id = f"ClosedUni/papercli-papers-{row['venue'].lower()}"
+repo_id = f"GenAI4ELab/papercli-papers-{row['venue'].lower()}"
 path = hf_hub_download(
     repo_id=repo_id,
     filename=row["hf_pdf_path"],

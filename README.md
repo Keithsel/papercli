@@ -137,8 +137,8 @@ just export-parquet
 
 ### Dataset Structure
 
-- `ClosedUni/papercli-papers` (main entrypoint): Contains the full index metadata parquet (`papers.parquet`) and the per-venue browse parquet views (`browse/`).
-- `ClosedUni/papercli-papers-[venue]`: Contains the sharded PDF files of that specific venue (no metadata parquet).
+- `GenAI4ELab/papercli-papers` (main entrypoint): Contains the full index metadata parquet (`papers.parquet`) and the per-venue browse parquet views (`browse/`).
+- `GenAI4ELab/papercli-papers-[venue]`: Contains the sharded PDF files of that specific venue (no metadata parquet).
 
 ### Resolving PDFs
 
@@ -149,7 +149,7 @@ To fetch a mirrored PDF:
 ```python
 from huggingface_hub import hf_hub_download
 
-repo_id = f"ClosedUni/papercli-papers-{row['venue'].lower()}"
+repo_id = f"GenAI4ELab/papercli-papers-{row['venue'].lower()}"
 path = hf_hub_download(
     repo_id=repo_id,
     filename=row["hf_pdf_path"],   # e.g. "pdfs/acl/2025/12/12d4c706b05abfff.pdf"
@@ -161,7 +161,7 @@ If `hf_pdf_path` is null, use `pdf_url` instead.
 
 ### Publishing & Collaboration
 
-To publish indexed papers and downloaded PDFs to the `ClosedUni/papercli-papers` Hugging Face dataset (configured via the `HF_DATASET_SLUG` environment variable):
+To publish indexed papers and downloaded PDFs to the `GenAI4ELab/papercli-papers` Hugging Face dataset (configured via the `HF_DATASET_SLUG` environment variable):
 
 1. Authenticate with Hugging Face:
 
