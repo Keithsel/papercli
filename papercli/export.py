@@ -23,7 +23,7 @@ COLUMNS = [
 
 
 def export_parquet(out: Path, db_path: Path = DEFAULT_DB) -> int:
-    from papercli.cli import get_repo_id
+    from papercli.base import get_repo_id
 
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row

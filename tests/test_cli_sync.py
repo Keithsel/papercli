@@ -17,7 +17,7 @@ def test_venue_year_key():
     assert sorted_items == [("AAAI", 2024), ("ACL", 2023), ("CVPR", 2025)]
 
 
-@patch("huggingface_hub.HfApi")
+@patch("papercli.sync.HfApi")
 def test_sync_hf_logic(mock_hf_api_class):
     mock_api = MagicMock()
     mock_hf_api_class.return_value = mock_api
@@ -44,10 +44,10 @@ def test_sync_hf_logic(mock_hf_api_class):
         mock_api.list_repo_files.return_value = [expected_pdf_path]
 
         with (
-            patch("papercli.cli.Store", return_value=store),
-            patch("papercli.cli.DEFAULT_DB", db_path),
+            patch("papercli.sync.Store", return_value=store),
+            patch("papercli.sync.DEFAULT_DB", db_path),
         ):
-            from papercli.cli import _sync_hf_logic
+            from papercli.sync import _sync_hf_logic
 
             conn = store.conn
             row = conn.execute(
@@ -63,8 +63,8 @@ def test_sync_hf_logic(mock_hf_api_class):
             assert row["pdf_path"] == f"hf://{expected_pdf_path}"
 
 
-@patch("huggingface_hub.HfApi")
-@patch("huggingface_hub.create_repo")
+@patch("papercli.sync.HfApi")
+@patch("papercli.sync.create_repo")
 def test_sync_hf_logic_creates_missing_repo(mock_create_repo, mock_hf_api_class):
     from huggingface_hub.errors import RepositoryNotFoundError
     import httpx
@@ -98,10 +98,10 @@ def test_sync_hf_logic_creates_missing_repo(mock_create_repo, mock_hf_api_class)
         store.upsert([paper1])
 
         with (
-            patch("papercli.cli.Store", return_value=store),
-            patch("papercli.cli.DEFAULT_DB", db_path),
+            patch("papercli.sync.Store", return_value=store),
+            patch("papercli.sync.DEFAULT_DB", db_path),
         ):
-            from papercli.cli import _sync_hf_logic
+            from papercli.sync import _sync_hf_logic
 
             _sync_hf_logic()
 
@@ -139,7 +139,8 @@ def test_upsert_does_not_overwrite_pdf_path():
 
 def test_venue_years_filtering():
     from typer.testing import CliRunner
-    from papercli.cli import app, console
+    from papercli.cli import app
+    from papercli.venue_years import console
 
     console.width = 150
 
@@ -150,10 +151,10 @@ def test_venue_years_filtering():
         store = Store(db_path)
 
         with (
-            patch("papercli.cli.Store", return_value=store),
-            patch("papercli.cli.DEFAULT_DB", db_path),
+            patch("papercli.venue_years.Store", return_value=store),
+            patch("papercli.venue_years.DEFAULT_DB", db_path),
             patch(
-                "papercli.cli.all_supported_venue_years",
+                "papercli.venue_years.all_supported_venue_years",
                 return_value=[("CVPR", 2024), ("ICLR", 2025), ("NeurIPS", 2025)],
             ),
         ):
@@ -189,3 +190,46 @@ def test_venue_years_filtering():
             assert "CVPR" not in result_both.stdout
             assert "ICLR" in result_both.stdout
             assert "NeurIPS" not in result_both.stdout
+
+
+@patch("papercli.publish.HfApi")
+@patch("papercli.publish.create_repo")
+def test_cli_publish(mock_create_repo, mock_hf_api_class):
+    from typer.testing import CliRunner
+    from papercli.cli import app
+
+    runner = CliRunner()
+    mock_api = MagicMock()
+    mock_hf_api_class.return_value = mock_api
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "papers.db"
+        store = Store(db_path)
+
+        paper1 = Paper(
+            title="Publish test paper",
+            authors=["Bob"],
+            venue="ACL",
+            year=2023,
+            source="acl",
+            pdf_url="http://example.com/paper.pdf",
+        )
+        store.upsert([paper1])
+
+        pdf_dir = Path(tmpdir) / "pdfs" / "acl" / "2023" / paper1.id[:2]
+        pdf_dir.mkdir(parents=True, exist_ok=True)
+        (pdf_dir / f"{paper1.id}.pdf").write_bytes(b"dummy pdf")
+
+        with (
+            patch("papercli.publish.DEFAULT_DB", db_path),
+            patch("papercli.publish.PDF_DIR", Path(tmpdir) / "pdfs"),
+        ):
+            result = runner.invoke(app, ["publish"])
+            assert result.exit_code == 0
+            assert "Uploaded full parquet" in result.stdout
+            assert "Uploaded browse views" in result.stdout
+
+    mock_create_repo.assert_called()
+    mock_api.upload_large_folder.assert_called()
+    mock_api.upload_file.assert_called()
+    mock_api.upload_folder.assert_called()

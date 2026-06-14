@@ -118,6 +118,8 @@ pylatexenc==2.10
     # via
     #   acl-anthology
     #   openreview-py
+pysocks==1.7.1
+    # via papercli
 pytest==9.0.3
 python-slugify==8.0.4
     # via acl-anthology

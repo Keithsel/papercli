@@ -11,8 +11,8 @@ typecheck:
 test:
     uv run pytest
 
-crawl venue year:
-    uv run papers crawl {{ venue }} {{ year }}
+crawl *args="":
+    uv run papers crawl {{ args }}
 
 search query:
     uv run papers search "{{ query }}"
@@ -32,14 +32,11 @@ reindex:
 sync-hf:
     uv run papers sync-hf
 
-download venue="" year="":
-    uv run python scripts/download.py --venue "{{ venue }}" --year "{{ year }}"
-
-download-mul venue="" year="":
-    uv run python scripts/download.py --parallel --venue "{{ venue }}" --year "{{ year }}"
+download *args="":
+    uv run papers download {{ args }}
 
 publish *args="":
-    uv run python scripts/publish.py {{ args }}
+    uv run papers publish {{ args }}
 
 clean:
     rm -rf .ruff_cache/ .pytest_cache/ .mypy_cache/ build/ dist/ *.egg-info/ .coverage htmlcov/

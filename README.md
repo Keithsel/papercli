@@ -188,7 +188,7 @@ To publish indexed papers and downloaded PDFs to the `ClosedUni/papercli-papers`
 
 4. Export and upload to Hugging Face:
    ```bash
-   python scripts/publish.py
+   papers publish
    ```
 
 ## Development
