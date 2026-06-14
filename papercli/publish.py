@@ -73,7 +73,7 @@ def publish_dataset(venue: str | None = None, year: int | None = None) -> None:
     browse_dir = DEFAULT_DB.parent / "browse"
     hf_readme_path = DEFAULT_DB.parent.parent / "HF_README.md"
 
-    venue_filter = venue.lower() if venue else None
+    venue_filters = [v.strip().lower() for v in venue.split(",")] if venue else []
     year_filter = year if year else None
 
     reorganize_pdfs(PDF_DIR, DEFAULT_DB)
@@ -84,7 +84,7 @@ def publish_dataset(venue: str | None = None, year: int | None = None) -> None:
         for venue_dir in PDF_DIR.iterdir():
             if venue_dir.is_dir():
                 venue_lower = venue_dir.name
-                if venue_filter and venue_lower != venue_filter:
+                if venue_filters and venue_lower not in venue_filters:
                     continue
 
                 venue_repo_id = get_repo_id(venue_lower)

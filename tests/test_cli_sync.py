@@ -192,15 +192,18 @@ def test_venue_years_filtering():
             assert "NeurIPS" not in result_both.stdout
 
 
+@patch("papercli.export.HfApi")
 @patch("papercli.publish.HfApi")
 @patch("papercli.publish.create_repo")
-def test_cli_publish(mock_create_repo, mock_hf_api_class):
+def test_cli_publish(mock_create_repo, mock_publish_hf_api, mock_export_hf_api):
     from typer.testing import CliRunner
     from papercli.cli import app
 
     runner = CliRunner()
     mock_api = MagicMock()
-    mock_hf_api_class.return_value = mock_api
+    mock_api.list_repo_files.return_value = []
+    mock_publish_hf_api.return_value = mock_api
+    mock_export_hf_api.return_value = mock_api
 
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "papers.db"
@@ -233,3 +236,50 @@ def test_cli_publish(mock_create_repo, mock_hf_api_class):
     mock_api.upload_large_folder.assert_called()
     mock_api.upload_file.assert_called()
     mock_api.upload_folder.assert_called()
+
+
+@patch("papercli.export.HfApi")
+@patch("papercli.publish.HfApi")
+@patch("papercli.publish.create_repo")
+def test_cli_publish_comma_separated(
+    mock_create_repo, mock_publish_hf_api, mock_export_hf_api
+):
+    from typer.testing import CliRunner
+    from papercli.cli import app
+
+    runner = CliRunner()
+    mock_api = MagicMock()
+    mock_api.list_repo_files.return_value = []
+    mock_publish_hf_api.return_value = mock_api
+    mock_export_hf_api.return_value = mock_api
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "papers.db"
+        store = Store(db_path)
+
+        paper1 = Paper(
+            title="Publish test paper",
+            authors=["Bob"],
+            venue="ACL",
+            year=2023,
+            source="acl",
+            pdf_url="http://example.com/paper.pdf",
+        )
+        store.upsert([paper1])
+
+        pdf_dir = Path(tmpdir) / "pdfs" / "acl" / "2023" / paper1.id[:2]
+        pdf_dir.mkdir(parents=True, exist_ok=True)
+        (pdf_dir / f"{paper1.id}.pdf").write_bytes(b"dummy pdf")
+
+        pdf_dir_cvpr = Path(tmpdir) / "pdfs" / "cvpr" / "2023" / "ab"
+        pdf_dir_cvpr.mkdir(parents=True, exist_ok=True)
+        (pdf_dir_cvpr / "dummy.pdf").write_bytes(b"dummy pdf")
+
+        with (
+            patch("papercli.publish.DEFAULT_DB", db_path),
+            patch("papercli.publish.PDF_DIR", Path(tmpdir) / "pdfs"),
+        ):
+            result = runner.invoke(app, ["publish", "-v", "ACL,ICCV,WACV"])
+            assert result.exit_code == 0
+            assert "Uploading PDFs for venue: acl" in result.stdout
+            assert "Uploading PDFs for venue: cvpr" not in result.stdout

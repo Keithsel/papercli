@@ -80,3 +80,43 @@ def get_repo_id(venue_lower: str) -> str:
         return os.environ[env_key]
     base_slug = os.environ.get("HF_DATASET_SLUG", "ClosedUni/papercli-papers")
     return f"{base_slug}-{venue_lower}"
+
+
+def fetch_abstracts_for_papers(
+    papers: list[Paper], parse_callback, max_workers: int = 16
+) -> None:
+    import os
+    from concurrent.futures import ThreadPoolExecutor
+    import requests
+
+    has_proxy = bool(os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY"))
+
+    def fetch_one(paper: Paper) -> None:
+        if not paper.forum_url:
+            return
+        try:
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+                )
+            }
+            resp = requests.get(paper.forum_url, headers=headers, timeout=60)
+            resp.raise_for_status()
+            abstract = parse_callback(resp.text)
+            if abstract:
+                paper.abstract = abstract.strip()
+        except Exception as e:
+            from papercli.logging import logger
+
+            logger.debug(
+                f"Failed to fetch abstract for '{paper.title}' from {paper.forum_url}: {e}",
+                exc_info=True,
+            )
+
+    if has_proxy:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            executor.map(fetch_one, papers)
+    else:
+        for paper in papers:
+            fetch_one(paper)

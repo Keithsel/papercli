@@ -6,12 +6,16 @@ from rich.table import Table
 import papercli.crawlers  # noqa: F401
 from papercli.base import REGISTRY
 from papercli.db import Store, DEFAULT_DB
+from papercli.logging import setup_logging
 from papercli.export import export_parquet
 from papercli.crawl import crawl_venue, index_all
 from papercli.download import download_pdfs
 from papercli.venue_years import show_venue_years
 from papercli.sync import sync_hf_dataset
 from papercli.publish import publish_dataset
+
+setup_logging()
+
 
 app = typer.Typer(help="Crawl, index and search AI conference/journal papers.")
 console = Console()
@@ -26,14 +30,11 @@ def crawl(
     year: int = typer.Argument(
         None, help="Year to crawl (e.g. 2025). Crawls all if not specified."
     ),
-    parallel: bool = typer.Option(
-        False, "--parallel", "-p", help="Crawl in parallel subprocesses"
-    ),
     mullvad: bool = typer.Option(
         False, "--mullvad", "-m", help="Use rotating Mullvad SOCKS5 proxies"
     ),
 ):
-    crawl_venue(venue=venue, year=year, parallel=parallel, mullvad=mullvad)
+    crawl_venue(venue=venue, year=year, mullvad=mullvad)
 
 
 @app.command()
@@ -116,22 +117,22 @@ def sync_hf():
 @app.command()
 def index(
     reindex: bool = typer.Option(
-        False, "--reindex", help="Re-crawl and reindex even if already marked completed"
+        False,
+        "--reindex",
+        "-r",
+        help="Re-crawl and reindex even if already marked completed",
     ),
     sync_hf: bool = typer.Option(
-        False, "--sync-hf", help="Sync with HF dataset PDFs after indexing"
-    ),
-    parallel: bool = typer.Option(
         False,
-        "--parallel",
-        "-p",
-        help="Crawl and index venue-years concurrently in parallel subprocesses",
+        "--sync-hf",
+        "-s",
+        help="Sync with HF dataset PDFs after indexing",
     ),
     mullvad: bool = typer.Option(
         False, "--mullvad", "-m", help="Use rotating Mullvad SOCKS5 proxies"
     ),
 ):
-    index_all(reindex=reindex, sync_hf=sync_hf, parallel=parallel, mullvad=mullvad)
+    index_all(reindex=reindex, sync_hf=sync_hf, mullvad=mullvad)
 
 
 @app.command()

@@ -1,12 +1,15 @@
 import os
 import random
+import re
 import subprocess
+import time
 import typer
 from rich.console import Console
 
 from papercli.base import get_crawler, all_supported_venue_years
 from papercli.db import Store
 from papercli.download import get_mullvad_proxies
+from papercli.logging import logger
 
 console = Console()
 
@@ -26,12 +29,58 @@ def _crawl_one(venue: str, year: int) -> int:
     return total
 
 
+def _run_parallel_crawls(targets: list[tuple[str, int]], mullvad: bool) -> list[str]:
+    processes = []
+    for v, y in targets:
+        cmd = ["uv", "run", "papers", "crawl", v, str(y)]
+        if mullvad:
+            cmd.append("--mullvad")
+        env = os.environ.copy()
+        env["PAPERCLI_SUBPROCESS"] = "1"
+        proc = subprocess.Popen(
+            cmd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        console.print(f"[yellow]Started crawling {v} {y}...[/]")
+        processes.append((f"{v} {y}", proc))
+
+    active_processes = list(processes)
+    failed = []
+    while active_processes:
+        for item in list(active_processes):
+            label, proc = item
+            if proc.poll() is not None:
+                stdout, stderr = proc.communicate()
+                if proc.returncode != 0:
+                    console.print(
+                        f"[red]Failed:[/] {label} (Details logged to .papercli/papers.log)"
+                    )
+                    logger.error(f"Crawler failed for {label}:")
+                    if stdout:
+                        logger.error(f"STDOUT:\n{stdout.strip()}")
+                    if stderr:
+                        logger.error(f"STDERR:\n{stderr.strip()}")
+                    failed.append(label)
+                else:
+                    m = re.search(r"Indexed (\d+) papers", stdout)
+                    count = m.group(1) if m else "some"
+                    console.print(
+                        f"[green]Completed:[/] {label} (Indexed {count} papers)"
+                    )
+                active_processes.remove(item)
+        time.sleep(0.5)
+    return failed
+
+
 def crawl_venue(
     venue: str | None = None,
     year: int | None = None,
-    parallel: bool = False,
     mullvad: bool = False,
 ) -> None:
+    parallel = mullvad
     targets = []
     for v, y in all_supported_venue_years():
         if venue and v.lower() != venue.lower():
@@ -46,24 +95,8 @@ def crawl_venue(
         )
         raise typer.Exit(code=1)
 
-    if parallel:
-        console.print(f"Starting parallel crawling of {len(targets)} venue-years...")
-        processes = []
-        for v, y in targets:
-            cmd = ["uv", "run", "papers", "crawl", v, str(y)]
-            if mullvad:
-                cmd.append("--mullvad")
-            proc = subprocess.Popen(cmd)
-            processes.append((f"{v} {y}", proc))
-
-        failed = []
-        for label, proc in processes:
-            exit_code = proc.wait()
-            if exit_code != 0:
-                console.print(f"[red]Failed:[/] {label} (exit code {exit_code})")
-                failed.append(label)
-            else:
-                console.print(f"[green]Completed:[/] {label}")
+    if parallel and len(targets) > 1:
+        failed = _run_parallel_crawls(targets, mullvad)
         if failed:
             raise typer.Exit(code=1)
     else:
@@ -76,19 +109,23 @@ def crawl_venue(
                     os.environ["HTTP_PROXY"] = proxy_url
                     os.environ["HTTPS_PROXY"] = proxy_url
                     console.print(f"[green]Proxy routing active via {p_host}[/]")
-            with console.status(f"Crawling {v} {y}..."):
+            is_sub = os.environ.get("PAPERCLI_SUBPROCESS") == "1"
+            if is_sub:
                 total = _crawl_one(v, y)
+            else:
+                with console.status(f"Crawling {v} {y}..."):
+                    total = _crawl_one(v, y)
             console.print(f"[green]Indexed {total} papers from {v} {y}.[/]")
 
 
 def index_all(
     reindex: bool = False,
     sync_hf: bool = False,
-    parallel: bool = False,
     mullvad: bool = False,
 ) -> None:
     from papercli.sync import _sync_hf_logic
 
+    parallel = mullvad
     store = Store()
     completed = store.get_completed_crawls()
 
@@ -102,26 +139,8 @@ def index_all(
     if not targets:
         console.print("[yellow]All supported venue-years are already indexed.[/]")
     else:
-        if parallel:
-            console.print(
-                f"Starting parallel indexing of {len(targets)} venue-years..."
-            )
-            processes = []
-            for v, y in targets:
-                cmd = ["uv", "run", "papers", "crawl", v, str(y)]
-                if mullvad:
-                    cmd.append("--mullvad")
-                proc = subprocess.Popen(cmd)
-                processes.append((f"{v} {y}", proc))
-
-            failed = []
-            for label, proc in processes:
-                exit_code = proc.wait()
-                if exit_code != 0:
-                    console.print(f"[red]Failed:[/] {label} (exit code {exit_code})")
-                    failed.append(label)
-                else:
-                    console.print(f"[green]Completed:[/] {label}")
+        if parallel and len(targets) > 1:
+            failed = _run_parallel_crawls(targets, mullvad)
             if failed:
                 raise typer.Exit(code=1)
         else:
@@ -135,11 +154,18 @@ def index_all(
                         os.environ["HTTPS_PROXY"] = proxy_url
                         console.print(f"[green]Proxy routing active via {p_host}[/]")
                 try:
-                    with console.status(f"Crawling {v} {y}..."):
+                    is_sub = os.environ.get("PAPERCLI_SUBPROCESS") == "1"
+                    if is_sub:
                         total = _crawl_one(v, y)
+                    else:
+                        with console.status(f"Crawling {v} {y}..."):
+                            total = _crawl_one(v, y)
                     console.print(f"[green]Indexed {total} papers from {v} {y}.[/]")
                 except Exception as e:
-                    console.print(f"[red]Error crawling {v} {y}: {e}[/]")
+                    console.print(
+                        f"[red]Error crawling {v} {y}: {e} (Traceback logged to .papercli/papers.log)[/]"
+                    )
+                    logger.exception(f"Error crawling {v} {y}:")
 
     if sync_hf:
         with console.status("Syncing with Hugging Face dataset..."):

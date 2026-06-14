@@ -4,7 +4,7 @@ from collections.abc import Iterator
 import requests
 from selectolax.parser import HTMLParser
 
-from papercli.base import Crawler, register
+from papercli.base import Crawler, register, fetch_abstracts_for_papers
 from papercli.models import Paper
 
 BASE = "https://www.ecva.net"
@@ -32,7 +32,16 @@ class ECVACrawler(Crawler):
             raise KeyError(f"Unknown ECCV section for {venue} {year}; add it to YEARS")
         resp = requests.get(URL, timeout=180)
         resp.raise_for_status()
-        yield from self._parse(resp.text, venue, year, section)
+
+        papers = list(self._parse(resp.text, venue, year, section))
+
+        def parse_abs(html: str) -> str | None:
+            tree = HTMLParser(html)
+            el = tree.css_first("#abstract")
+            return el.text(strip=True) if el else None
+
+        fetch_abstracts_for_papers(papers, parse_abs)
+        yield from papers
 
     def _parse(self, html: str, venue: str, year: int, section: str) -> Iterator[Paper]:
         tree = HTMLParser(html)

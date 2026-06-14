@@ -5,7 +5,7 @@ from collections.abc import Iterator
 import requests
 from selectolax.parser import HTMLParser
 
-from papercli.base import Crawler, register
+from papercli.base import Crawler, register, fetch_abstracts_for_papers
 from papercli.models import Paper
 
 BASE = "https://ojs.aaai.org"
@@ -126,5 +126,25 @@ class AAAICrawler(Crawler):
         for issue_url in issue_urls:
             resp = requests.get(issue_url, headers=HEADERS, timeout=60)
             resp.raise_for_status()
-            yield from self._parse_issue(resp.text, year)
+            papers = list(self._parse_issue(resp.text, year))
+
+            def parse_abs(html: str) -> str | None:
+                tree = HTMLParser(html)
+                for tag in [
+                    "section.abstract",
+                    "div.abstract",
+                    "div.article-abstract",
+                    "div.abstract-content",
+                    ".abstract",
+                ]:
+                    el = tree.css_first(tag)
+                    if el:
+                        text = el.text(strip=True)
+                        if text.startswith("Abstract"):
+                            text = text[len("Abstract") :].strip()
+                        return text
+                return None
+
+            fetch_abstracts_for_papers(papers, parse_abs)
+            yield from papers
             time.sleep(0.5)

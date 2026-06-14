@@ -3,7 +3,7 @@ from collections.abc import Iterator
 import requests
 from selectolax.parser import HTMLParser
 
-from papercli.base import Crawler, register
+from papercli.base import Crawler, register, fetch_abstracts_for_papers
 from papercli.models import Paper
 
 BASE = "https://www.ijcai.org"
@@ -32,7 +32,31 @@ class IJCAICrawler(Crawler):
         base_url = f"{BASE}/proceedings/{proc_year}/"
         resp = requests.get(base_url, timeout=120)
         resp.raise_for_status()
-        yield from self._parse(resp.text, venue, year)
+
+        papers = list(self._parse(resp.text, venue, year))
+
+        def parse_abs(html: str) -> str | None:
+            import re
+            import html as html_lib
+
+            matches = re.findall(
+                r'<div\s+class="col-md-12"\s*>(.*?)</div>',
+                html,
+                re.DOTALL | re.IGNORECASE,
+            )
+            for match in matches:
+                if 'class="keywords"' in match or "class='keywords'" in match:
+                    continue
+                clean_txt = re.sub(r"<[^>]*>", "", match).strip()
+                if not clean_txt:
+                    continue
+                clean_txt = html_lib.unescape(clean_txt)
+                clean_txt = clean_txt.replace('=""', "")
+                return " ".join(clean_txt.split())
+            return None
+
+        fetch_abstracts_for_papers(papers, parse_abs)
+        yield from papers
 
     def _parse(self, html: str, venue: str, year: int) -> Iterator[Paper]:
         proc_year = YEARS.get((venue, year))

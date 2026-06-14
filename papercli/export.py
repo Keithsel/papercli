@@ -72,11 +72,10 @@ def export_parquet(out: Path, db_path: Path = DEFAULT_DB) -> int:
     return len(rows)
 
 
-def _snippet(text: str | None, n: int = 200) -> str:
+def _snippet(text: str | None) -> str:
     if not text:
         return ""
-    text = text.strip()
-    return text[:n] + "…" if len(text) > n else text
+    return text.strip()
 
 
 def export_browse_by_venue_year(

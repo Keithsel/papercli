@@ -3,7 +3,7 @@ from collections.abc import Iterator
 import requests
 from selectolax.parser import HTMLParser
 
-from papercli.base import Crawler, register
+from papercli.base import Crawler, register, fetch_abstracts_for_papers
 from papercli.models import Paper
 
 BASE = "https://www.isca-archive.org"
@@ -33,7 +33,16 @@ class ISCACrawler(Crawler):
         base_url = f"{BASE}/interspeech_{proc_year}/"
         resp = requests.get(base_url, timeout=120)
         resp.raise_for_status()
-        yield from self._parse(resp.text, venue, year, base_url)
+
+        papers = list(self._parse(resp.text, venue, year, base_url))
+
+        def parse_abs(html: str) -> str | None:
+            tree = HTMLParser(html)
+            el = tree.css_first("#abstract")
+            return el.text(strip=True) if el else None
+
+        fetch_abstracts_for_papers(papers, parse_abs)
+        yield from papers
 
     def _parse(
         self, html: str, venue: str, year: int, base_url: str
